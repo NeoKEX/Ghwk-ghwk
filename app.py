@@ -1,6 +1,5 @@
-from flask import Flask, request, send_file, jsonify
+from flask import Flask, request, jsonify
 import requests
-from io import BytesIO
 import os
 
 app = Flask(__name__)
@@ -14,7 +13,7 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'service': 'Image Generation API',
-        'version': '1.0.0',
+        'version': '2.0.0',
         'worker_configured': bool(WORKER_URL)
     }), 200
 
@@ -29,11 +28,22 @@ def generate_image():
     - guidance_scale (optional): How closely to follow the prompt (default: 7.0)
     - shape (optional): Image shape - 'portrait', 'landscape', or 'square' (default: 'square')
     - negative_prompt (optional): What to avoid in the image
+    
+    Returns:
+    {
+        "success": true,
+        "image_url": "https://i.imgur.com/xxxxx.png",
+        "prompt": "...",
+        "seed": 123,
+        "shape": "square",
+        "guidance_scale": 7.0
+    }
     """
     try:
         # Check if worker is configured
         if not WORKER_URL:
             return jsonify({
+                'success': False,
                 'error': 'Worker service not configured',
                 'details': 'Please set PERCHANCE_WORKER_URL environment variable with your Render worker URL'
             }), 503
@@ -42,6 +52,7 @@ def generate_image():
         prompt = request.args.get('prompt')
         if not prompt:
             return jsonify({
+                'success': False,
                 'error': 'Missing required parameter: prompt'
             }), 400
         
@@ -55,12 +66,14 @@ def generate_image():
         valid_shapes = ['portrait', 'landscape', 'square']
         if shape not in valid_shapes:
             return jsonify({
+                'success': False,
                 'error': f'Invalid shape. Must be one of: {", ".join(valid_shapes)}'
             }), 400
         
         # Validate guidance_scale
         if guidance_scale < 0 or guidance_scale > 20:
             return jsonify({
+                'success': False,
                 'error': 'Guidance scale must be between 0 and 20'
             }), 400
         
@@ -87,37 +100,48 @@ def generate_image():
             try:
                 error_data = worker_response.json()
                 return jsonify({
+                    'success': False,
                     'error': 'Worker service error',
                     'details': error_data.get('error', 'Unknown error')
                 }), worker_response.status_code
             except:
                 return jsonify({
+                    'success': False,
                     'error': 'Worker service error',
                     'details': f'HTTP {worker_response.status_code}'
                 }), worker_response.status_code
         
-        # Return the generated image
-        return send_file(
-            BytesIO(worker_response.content),
-            mimetype='image/png',
-            as_attachment=False,
-            download_name=f'generated_{prompt[:30]}.png'
-        )
+        # Get JSON response from worker
+        result = worker_response.json()
+        
+        # Return success response with image URL
+        return jsonify({
+            'success': True,
+            'image_url': result.get('image_url'),
+            'prompt': result.get('prompt'),
+            'seed': result.get('seed'),
+            'shape': result.get('shape'),
+            'guidance_scale': result.get('guidance_scale'),
+            'negative_prompt': result.get('negative_prompt')
+        }), 200
     
     except requests.exceptions.Timeout:
         return jsonify({
+            'success': False,
             'error': 'Worker service timeout',
             'details': 'Image generation took too long. Please try again.'
         }), 504
     
     except requests.exceptions.ConnectionError:
         return jsonify({
+            'success': False,
             'error': 'Cannot connect to worker service',
             'details': 'Please check PERCHANCE_WORKER_URL or ensure the worker service is running'
         }), 503
     
     except Exception as e:
         return jsonify({
+            'success': False,
             'error': 'Failed to generate image',
             'details': str(e)
         }), 500
@@ -127,7 +151,7 @@ def index():
     """API documentation endpoint"""
     return jsonify({
         'name': 'Image Generation API',
-        'version': '1.0.0',
+        'version': '2.0.0',
         'worker_configured': bool(WORKER_URL),
         'worker_url': WORKER_URL if WORKER_URL else 'Not configured',
         'endpoints': {
@@ -137,7 +161,7 @@ def index():
             },
             '/generate': {
                 'method': 'GET',
-                'description': 'Generate an image from a text prompt using Perchance',
+                'description': 'Generate an image from a text prompt using Perchance and get the image URL',
                 'parameters': {
                     'prompt': {
                         'type': 'string',
@@ -168,14 +192,25 @@ def index():
                         'description': 'What to avoid in the image (e.g., "blurry, low quality")'
                     }
                 },
-                'example': '/generate?prompt=sunset over mountains&guidance_scale=7.5&shape=landscape&negative_prompt=blurry'
+                'example': '/generate?prompt=sunset over mountains&guidance_scale=7.5&shape=landscape&negative_prompt=blurry',
+                'response': {
+                    'success': True,
+                    'image_url': 'https://i.imgur.com/xxxxx.png',
+                    'prompt': '...',
+                    'seed': 123,
+                    'shape': 'square',
+                    'guidance_scale': 7.0
+                }
             }
         },
         'setup_instructions': {
-            '1': 'Deploy the worker service to Render using files in render_worker/ folder',
-            '2': 'Get your Render worker URL (e.g., https://your-worker.onrender.com)',
-            '3': 'Set PERCHANCE_WORKER_URL environment variable in Replit Secrets',
-            '4': 'Restart this app'
+            '1': 'Create an Imgur account and get a Client ID from https://api.imgur.com/oauth2/addclient',
+            '2': 'Deploy the worker service to Render using files in render_worker/ folder',
+            '3': 'Set IMGUR_CLIENT_ID environment variable in Render worker settings',
+            '4': 'Get your Render worker URL (e.g., https://your-worker.onrender.com)',
+            '5': 'Deploy the API service to Render',
+            '6': 'Set PERCHANCE_WORKER_URL environment variable in Render API settings',
+            '7': 'Test the API!'
         }
     }), 200
 

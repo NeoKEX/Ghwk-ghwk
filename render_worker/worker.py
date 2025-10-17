@@ -1,11 +1,15 @@
-from flask import Flask, request, send_file, jsonify
+from flask import Flask, request, jsonify
 import asyncio
 import perchance
 from io import BytesIO
 import traceback
 import os
+import base64
+import requests
 
 app = Flask(__name__)
+
+IMGUR_CLIENT_ID = os.environ.get('IMGUR_CLIENT_ID', '')
 
 def run_async(coro):
     """Helper function to run async code in sync context"""
@@ -16,19 +20,51 @@ def run_async(coro):
     finally:
         loop.close()
 
+def upload_to_imgur(image_binary):
+    """Upload image to Imgur and return the URL"""
+    if not IMGUR_CLIENT_ID:
+        raise ValueError("IMGUR_CLIENT_ID not configured. Please set it in environment variables.")
+    
+    if hasattr(image_binary, 'read'):
+        if hasattr(image_binary, 'seek'):
+            image_binary.seek(0)
+        image_data = image_binary.read()
+    else:
+        image_data = image_binary
+    
+    b64_image = base64.b64encode(image_data).decode('utf-8')
+    
+    headers = {
+        'Authorization': f'Client-ID {IMGUR_CLIENT_ID}'
+    }
+    
+    data = {
+        'image': b64_image,
+        'type': 'base64'
+    }
+    
+    response = requests.post('https://api.imgur.com/3/image', headers=headers, data=data)
+    
+    if response.status_code == 200:
+        json_data = response.json()
+        return json_data['data']['link']
+    else:
+        raise Exception(f"Imgur upload failed: {response.status_code} - {response.text}")
+
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
     return jsonify({
         'status': 'healthy',
         'service': 'Perchance Worker',
-        'version': '1.0.0'
+        'version': '2.0.0',
+        'imgur_configured': bool(IMGUR_CLIENT_ID)
     }), 200
 
 @app.route('/generate', methods=['POST'])
 def generate_image():
     """
-    Generate an image using Perchance
+    Generate an image using Perchance and upload to Imgur
     
     JSON Body:
     {
@@ -37,6 +73,15 @@ def generate_image():
         "guidance_scale": 7.0,  // optional
         "shape": "square",  // optional: portrait, landscape, square
         "negative_prompt": ""  // optional
+    }
+    
+    Returns:
+    {
+        "image_url": "https://i.imgur.com/xxxxx.png",
+        "prompt": "...",
+        "seed": 123,
+        "shape": "square",
+        "guidance_scale": 7.0
     }
     """
     try:
@@ -86,25 +131,22 @@ def generate_image():
         # Run async generation
         image_binary = run_async(generate())
         
-        # Return the image - handle file-like objects or raw bytes
-        if hasattr(image_binary, 'read'):
-            # It's a file-like object (BytesIO, AsyncBufferedIOBase, etc.)
-            if hasattr(image_binary, 'seek'):
-                image_binary.seek(0)  # Reset pointer to start if possible
-            return send_file(
-                image_binary,
-                mimetype='image/png',
-                as_attachment=False,
-                download_name='generated.png'
-            )
-        else:
-            # It's raw bytes, wrap in BytesIO
-            return send_file(
-                BytesIO(image_binary),
-                mimetype='image/png',
-                as_attachment=False,
-                download_name='generated.png'
-            )
+        # Upload to Imgur
+        image_url = upload_to_imgur(image_binary)
+        
+        # Return JSON response with image URL
+        response_data = {
+            'image_url': image_url,
+            'prompt': prompt,
+            'seed': seed,
+            'shape': shape,
+            'guidance_scale': guidance_scale
+        }
+        
+        if negative_prompt:
+            response_data['negative_prompt'] = negative_prompt
+        
+        return jsonify(response_data), 200
     
     except Exception as e:
         print(f"Error generating image: {str(e)}")
