@@ -86,13 +86,25 @@ def generate_image():
         # Run async generation
         image_binary = run_async(generate())
         
-        # Return the image
-        return send_file(
-            image_binary,
-            mimetype='image/png',
-            as_attachment=False,
-            download_name='generated.png'
-        )
+        # Return the image - handle file-like objects or raw bytes
+        if hasattr(image_binary, 'read'):
+            # It's a file-like object (BytesIO, AsyncBufferedIOBase, etc.)
+            if hasattr(image_binary, 'seek'):
+                image_binary.seek(0)  # Reset pointer to start if possible
+            return send_file(
+                image_binary,
+                mimetype='image/png',
+                as_attachment=False,
+                download_name='generated.png'
+            )
+        else:
+            # It's raw bytes, wrap in BytesIO
+            return send_file(
+                BytesIO(image_binary),
+                mimetype='image/png',
+                as_attachment=False,
+                download_name='generated.png'
+            )
     
     except Exception as e:
         print(f"Error generating image: {str(e)}")
