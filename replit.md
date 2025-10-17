@@ -113,9 +113,10 @@ Preferred communication style: Simple, everyday language.
 - **Flask (3.0.3)** - Web framework for worker
   - Chosen for simplicity and lightweight footprint
   
-- **Perchance (1.0.0)** - AI image generation library
+- **Perchance (latest)** - AI image generation library
   - Core functionality for image creation
   - Requires async/await pattern
+  - Currently version 0.0.1 on PyPI
   
 - **Pillow (10.4.0)** - Image processing library
   - Required by Perchance for image manipulation
