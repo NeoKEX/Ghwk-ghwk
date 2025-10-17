@@ -1,22 +1,12 @@
 from flask import Flask, request, send_file, jsonify
-import asyncio
-import perchance
+import requests
 from io import BytesIO
-import traceback
 import os
-
-os.environ['PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS'] = 'true'
 
 app = Flask(__name__)
 
-def run_async(coro):
-    """Helper function to run async code in sync context"""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
+# Get worker URL from environment variable
+WORKER_URL = os.environ.get('PERCHANCE_WORKER_URL', '')
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -24,13 +14,14 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'service': 'Image Generation API',
-        'version': '1.0.0'
+        'version': '1.0.0',
+        'worker_configured': bool(WORKER_URL)
     }), 200
 
 @app.route('/generate', methods=['GET'])
 def generate_image():
     """
-    Generate an image using Perchance API
+    Generate an image using Perchance API via Render worker
     
     Query Parameters:
     - prompt (required): Text description of the image
@@ -40,15 +31,19 @@ def generate_image():
     - negative_prompt (optional): What to avoid in the image
     """
     try:
+        # Check if worker is configured
+        if not WORKER_URL:
+            return jsonify({
+                'error': 'Worker service not configured',
+                'details': 'Please set PERCHANCE_WORKER_URL environment variable with your Render worker URL'
+            }), 503
+        
         # Get and validate parameters
         prompt = request.args.get('prompt')
         if not prompt:
             return jsonify({
                 'error': 'Missing required parameter: prompt'
             }), 400
-        
-        # Add casual photo style to the prompt
-        styled_prompt = f"casual photo, {prompt}"
         
         # Optional parameters
         seed = request.args.get('seed', default=-1, type=int)
@@ -69,40 +64,59 @@ def generate_image():
                 'error': 'Guidance scale must be between 0 and 20'
             }), 400
         
-        # Generate image using perchance
-        async def generate():
-            gen = perchance.ImageGenerator()
-            
-            # Create kwargs for the image generation
-            kwargs = {
-                'seed': seed,
-                'guidance_scale': guidance_scale,
-                'shape': shape,
-            }
-            
-            if negative_prompt:
-                kwargs['negative_prompt'] = negative_prompt
-            
-            async with await gen.image(styled_prompt, **kwargs) as result:
-                binary = await result.download()
-                return binary
+        # Prepare request to worker
+        worker_data = {
+            'prompt': prompt,
+            'seed': seed,
+            'guidance_scale': guidance_scale,
+            'shape': shape,
+        }
         
-        # Run async generation
-        image_binary = run_async(generate())
+        if negative_prompt:
+            worker_data['negative_prompt'] = negative_prompt
         
-        # Return the image
+        # Call worker service
+        worker_response = requests.post(
+            f'{WORKER_URL}/generate',
+            json=worker_data,
+            timeout=120  # 2 minute timeout for image generation
+        )
+        
+        # Check if worker request was successful
+        if worker_response.status_code != 200:
+            try:
+                error_data = worker_response.json()
+                return jsonify({
+                    'error': 'Worker service error',
+                    'details': error_data.get('error', 'Unknown error')
+                }), worker_response.status_code
+            except:
+                return jsonify({
+                    'error': 'Worker service error',
+                    'details': f'HTTP {worker_response.status_code}'
+                }), worker_response.status_code
+        
+        # Return the generated image
         return send_file(
-            image_binary,
+            BytesIO(worker_response.content),
             mimetype='image/png',
             as_attachment=False,
             download_name=f'generated_{prompt[:30]}.png'
         )
     
+    except requests.exceptions.Timeout:
+        return jsonify({
+            'error': 'Worker service timeout',
+            'details': 'Image generation took too long. Please try again.'
+        }), 504
+    
+    except requests.exceptions.ConnectionError:
+        return jsonify({
+            'error': 'Cannot connect to worker service',
+            'details': 'Please check PERCHANCE_WORKER_URL or ensure the worker service is running'
+        }), 503
+    
     except Exception as e:
-        # Log the error for debugging
-        print(f"Error generating image: {str(e)}")
-        print(traceback.format_exc())
-        
         return jsonify({
             'error': 'Failed to generate image',
             'details': str(e)
@@ -114,6 +128,8 @@ def index():
     return jsonify({
         'name': 'Image Generation API',
         'version': '1.0.0',
+        'worker_configured': bool(WORKER_URL),
+        'worker_url': WORKER_URL if WORKER_URL else 'Not configured',
         'endpoints': {
             '/health': {
                 'method': 'GET',
@@ -121,7 +137,7 @@ def index():
             },
             '/generate': {
                 'method': 'GET',
-                'description': 'Generate an image from a text prompt (casual photo style)',
+                'description': 'Generate an image from a text prompt using Perchance',
                 'parameters': {
                     'prompt': {
                         'type': 'string',
@@ -154,6 +170,12 @@ def index():
                 },
                 'example': '/generate?prompt=sunset over mountains&guidance_scale=7.5&shape=landscape&negative_prompt=blurry'
             }
+        },
+        'setup_instructions': {
+            '1': 'Deploy the worker service to Render using files in render_worker/ folder',
+            '2': 'Get your Render worker URL (e.g., https://your-worker.onrender.com)',
+            '3': 'Set PERCHANCE_WORKER_URL environment variable in Replit Secrets',
+            '4': 'Restart this app'
         }
     }), 200
 
