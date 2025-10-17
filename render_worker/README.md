@@ -48,7 +48,16 @@ Generate an image from a text prompt.
 }
 ```
 
-**Response:** PNG image file
+**Response:**
+```json
+{
+  "image_base64": "iVBORw0KGgoAAAANSUhEUgAA...",
+  "prompt": "fantasy landscape",
+  "seed": 123456,
+  "shape": "square",
+  "guidance_scale": 7.0
+}
+```
 
 ### GET /health
 Health check endpoint.
@@ -58,7 +67,7 @@ Health check endpoint.
 {
   "status": "healthy",
   "service": "Perchance Worker",
-  "version": "1.0.0"
+  "version": "3.0.0"
 }
 ```
 

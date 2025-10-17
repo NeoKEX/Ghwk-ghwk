@@ -1,35 +1,20 @@
 # Deployment Guide - Image Generation API on Render
 
-This guide will help you deploy your image generation service on Render's free tier. The API returns **image URLs** instead of binary data, making it perfect for Render's ephemeral storage.
+This guide will help you deploy your image generation service on Render's free tier. The API returns **base64-encoded data URLs** instead of binary data, with no external dependencies required.
 
 ## Architecture Overview
 
 Your API uses a **two-tier architecture**:
-- **API Service** - Lightweight Flask API that handles requests and returns JSON with image URLs
-- **Worker Service** - Heavy service that runs Perchance image generation and uploads to Imgur
+- **API Service** - Lightweight Flask API that handles requests and returns JSON with base64 data URLs
+- **Worker Service** - Heavy service that runs Perchance image generation and encodes to base64
 
 ## Prerequisites
 
 Before deploying, you need:
 1. A [Render](https://render.com) account (free tier available)
-2. An [Imgur](https://imgur.com) account for image storage (free)
-3. A GitHub account to host your code
+2. A GitHub account to host your code
 
-## Step 1: Get Imgur API Credentials
-
-Images are stored on Imgur (free tier) since Render's free tier has ephemeral storage.
-
-1. Go to [Imgur API Registration](https://api.imgur.com/oauth2/addclient)
-2. Log in or create an Imgur account
-3. Fill out the registration form:
-   - **Application name**: Image Generation API (or your choice)
-   - **Authorization type**: Select "OAuth 2 authorization without a callback URL"
-   - **Email**: Your email address
-   - **Description**: Image generation service
-4. Click **Submit**
-5. **Copy your Client ID** - you'll need this later
-
-## Step 2: Prepare Your GitHub Repository
+## Step 1: Prepare Your GitHub Repository
 
 1. Create a new GitHub repository (e.g., `image-generation-api`)
 2. Push all your project files to GitHub:
@@ -41,7 +26,7 @@ Images are stored on Imgur (free tier) since Render's free tier has ephemeral st
    git push -u origin main
    ```
 
-## Step 3: Deploy to Render
+## Step 2: Deploy to Render
 
 ### Option A: Using render.yaml (Recommended)
 
@@ -88,17 +73,7 @@ The `render.yaml` file automatically deploys both services.
    - **Instance Type**: **Free**
 4. Click **"Create Web Service"**
 
-## Step 4: Configure Environment Variables
-
-### Worker Service Environment Variables
-
-1. Go to your **perchance-worker** service in Render Dashboard
-2. Click **"Environment"** in the left sidebar
-3. Add the following environment variable:
-   - **Key**: `IMGUR_CLIENT_ID`
-   - **Value**: Your Imgur Client ID from Step 1
-4. Click **"Save Changes"**
-5. The service will automatically redeploy
+## Step 3: Configure Environment Variables
 
 ### API Service Environment Variables
 
@@ -111,7 +86,11 @@ The `render.yaml` file automatically deploys both services.
 4. Click **"Save Changes"**
 5. The service will automatically redeploy
 
-## Step 5: Test Your API
+### Worker Service Environment Variables
+
+No environment variables needed for the worker service!
+
+## Step 4: Test Your API
 
 Once both services are deployed and configured:
 
@@ -144,7 +123,7 @@ GET https://image-api.onrender.com/generate?prompt=sunset over mountains&shape=l
 ```json
 {
   "success": true,
-  "image_url": "https://i.imgur.com/xxxxx.png",
+  "image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
   "prompt": "sunset over mountains",
   "seed": 123456,
   "shape": "landscape",
@@ -180,7 +159,7 @@ GET /generate?prompt=<text>&[optional parameters]
 ```json
 {
   "success": true,
-  "image_url": "https://i.imgur.com/xxxxx.png",
+  "image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
   "prompt": "fantasy castle in clouds",
   "seed": 789012,
   "shape": "portrait",
@@ -189,6 +168,8 @@ GET /generate?prompt=<text>&[optional parameters]
 }
 ```
 
+**Note**: The `image_url` is a base64-encoded data URL that can be used directly in HTML `<img>` tags or CSS.
+
 ## Troubleshooting
 
 ### "Worker service not configured" Error
@@ -196,10 +177,6 @@ GET /generate?prompt=<text>&[optional parameters]
 - Verify the URL is correct (should start with `https://`)
 - Redeploy the API service after setting the variable
 
-### "IMGUR_CLIENT_ID not configured" Error
-- Ensure `IMGUR_CLIENT_ID` is set in worker service environment variables
-- Verify the Client ID is correct (copy-paste from Imgur)
-- Redeploy the worker service after setting the variable
 
 ### Timeout Errors (504)
 - **Normal behavior** on free tier for first request after sleeping
@@ -210,11 +187,6 @@ GET /generate?prompt=<text>&[optional parameters]
 - Check that both services are deployed and running in Render Dashboard
 - Verify the worker URL is accessible
 - Check Render logs for errors
-
-### Imgur Upload Errors
-- Verify your Imgur Client ID is valid
-- Check Imgur API rate limits (free tier: 12,500 requests/day)
-- View worker service logs in Render for details
 
 ### Image Generation Errors
 - Check worker service logs in Render Dashboard
@@ -229,11 +201,11 @@ GET /generate?prompt=<text>&[optional parameters]
 - **Cold start**: 30-60 seconds when waking up
 - Limited to **512MB RAM** per service
 
-### Imgur Free Tier
-- **12,500 API requests/day**
-- Unlimited image storage
-- No bandwidth limits
-- Images never expire
+### Base64 Data URLs
+- **No external dependencies** - Images encoded directly in JSON responses
+- **No rate limits** - No external API calls for storage
+- **Larger responses** - Base64 encoding increases response size by ~33%
+- **Direct embedding** - Data URLs work directly in browsers
 
 ### Upgrading (Optional)
 
@@ -262,10 +234,9 @@ If you need better performance:
 
 ## Security Notes
 
-- Never commit API keys to GitHub
-- Use Render's environment variables for all secrets
-- Imgur Client ID is safe to use (Client Secret not needed for uploads)
-- Images uploaded to Imgur are publicly accessible
+- Never commit sensitive data to GitHub
+- Use Render's environment variables for configuration
+- Base64 data URLs are embedded in responses (no separate image storage)
 
 ## Next Steps
 
@@ -280,16 +251,15 @@ If you need better performance:
 ## Support
 
 - **Render Issues**: [Render Docs](https://render.com/docs)
-- **Imgur API**: [Imgur API Docs](https://apidocs.imgur.com/)
 - **Perchance**: [Perchance Text-to-Image](https://perchance.org/text-to-image-plugin)
 
-## Alternative Cloud Storage
+## Alternative Image Delivery
 
-If you want to use a different storage provider instead of Imgur:
+If you need traditional image URLs instead of base64 data URLs, you can integrate:
 
+- **Imgur**: Free tier with 12,500 requests/day
 - **Cloudinary**: Free tier with 25GB storage/bandwidth
 - **AWS S3**: Free tier for 12 months (5GB storage)
 - **Backblaze B2**: 10GB free storage
-- **Supabase Storage**: 1GB free storage
 
-Update the `upload_to_imgur()` function in `render_worker/worker.py` to use your preferred storage.
+Modify the `image_to_base64()` function in `render_worker/worker.py` to upload instead of encode.

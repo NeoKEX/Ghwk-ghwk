@@ -13,7 +13,7 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'service': 'Image Generation API',
-        'version': '2.0.0',
+        'version': '3.0.0',
         'worker_configured': bool(WORKER_URL)
     }), 200
 
@@ -32,7 +32,7 @@ def generate_image():
     Returns:
     {
         "success": true,
-        "image_url": "https://i.imgur.com/xxxxx.png",
+        "image_url": "data:image/png;base64,iVBORw0KGgo...",
         "prompt": "...",
         "seed": 123,
         "shape": "square",
@@ -114,10 +114,21 @@ def generate_image():
         # Get JSON response from worker
         result = worker_response.json()
         
-        # Return success response with image URL
+        # Validate and convert base64 to data URL
+        image_base64 = result.get('image_base64')
+        if not image_base64:
+            return jsonify({
+                'success': False,
+                'error': 'Worker service error',
+                'details': 'Worker did not return image data'
+            }), 502
+        
+        image_url = f"data:image/png;base64,{image_base64}"
+        
+        # Return success response with image data URL
         return jsonify({
             'success': True,
-            'image_url': result.get('image_url'),
+            'image_url': image_url,
             'prompt': result.get('prompt'),
             'seed': result.get('seed'),
             'shape': result.get('shape'),
@@ -151,7 +162,7 @@ def index():
     """API documentation endpoint"""
     return jsonify({
         'name': 'Image Generation API',
-        'version': '2.0.0',
+        'version': '3.0.0',
         'worker_configured': bool(WORKER_URL),
         'worker_url': WORKER_URL if WORKER_URL else 'Not configured',
         'endpoints': {
@@ -195,7 +206,7 @@ def index():
                 'example': '/generate?prompt=sunset over mountains&guidance_scale=7.5&shape=landscape&negative_prompt=blurry',
                 'response': {
                     'success': True,
-                    'image_url': 'https://i.imgur.com/xxxxx.png',
+                    'image_url': 'data:image/png;base64,iVBORw0KGgo...',
                     'prompt': '...',
                     'seed': 123,
                     'shape': 'square',
@@ -204,13 +215,11 @@ def index():
             }
         },
         'setup_instructions': {
-            '1': 'Create an Imgur account and get a Client ID from https://api.imgur.com/oauth2/addclient',
-            '2': 'Deploy the worker service to Render using files in render_worker/ folder',
-            '3': 'Set IMGUR_CLIENT_ID environment variable in Render worker settings',
-            '4': 'Get your Render worker URL (e.g., https://your-worker.onrender.com)',
-            '5': 'Deploy the API service to Render',
-            '6': 'Set PERCHANCE_WORKER_URL environment variable in Render API settings',
-            '7': 'Test the API!'
+            '1': 'Deploy the worker service to Render using files in render_worker/ folder',
+            '2': 'Get your Render worker URL (e.g., https://your-worker.onrender.com)',
+            '3': 'Deploy the API service to Render',
+            '4': 'Set PERCHANCE_WORKER_URL environment variable in Render API settings',
+            '5': 'Test the API!'
         }
     }), 200
 

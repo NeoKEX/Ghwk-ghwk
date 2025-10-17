@@ -19,6 +19,3 @@ services:
     plan: free
     dockerfilePath: ./render_worker/Dockerfile
     dockerContext: ./render_worker
-    envVars:
-      - key: IMGUR_CLIENT_ID
-        sync: false

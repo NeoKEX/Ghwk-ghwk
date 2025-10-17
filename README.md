@@ -1,14 +1,14 @@
 # Image Generation API
 
-A Flask-based image generation service that uses Perchance AI text-to-image and returns hosted image URLs. Designed to run on Render's free tier.
+A Flask-based image generation service that uses Perchance AI text-to-image and returns base64-encoded data URLs. Designed to run on Render's free tier with no external API dependencies.
 
 ## Features
 
 - 🎨 **AI Image Generation** - Powered by Perchance text-to-image
-- 🔗 **URL Responses** - Returns image URLs instead of binary data
-- ☁️ **Cloud Storage** - Images hosted on Imgur (free, permanent)
+- 🔗 **Data URL Responses** - Returns base64-encoded image data URLs
 - 🚀 **Free Deployment** - Runs on Render's free tier
 - 🌐 **Simple API** - RESTful JSON API with GET requests
+- 📦 **No External Dependencies** - No API keys or cloud storage needed
 
 ## Quick Start
 
@@ -23,7 +23,7 @@ Response:
 ```json
 {
   "success": true,
-  "image_url": "https://i.imgur.com/xxxxx.png",
+  "image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
   "prompt": "sunset over mountains",
   "seed": 123456,
   "shape": "square",
@@ -59,27 +59,21 @@ curl "https://your-api.onrender.com/generate?prompt=robot&seed=12345"
 ### Prerequisites
 
 1. [Render](https://render.com) account (free)
-2. [Imgur](https://imgur.com) account (free)
-3. [GitHub](https://github.com) account
+2. [GitHub](https://github.com) account
 
 ### Quick Deploy Steps
 
-1. **Get Imgur Client ID**
-   - Go to https://api.imgur.com/oauth2/addclient
-   - Register your application
-   - Copy the Client ID
-
-2. **Deploy to Render**
+1. **Deploy to Render**
    - Push this repo to GitHub
    - In Render Dashboard: New → Blueprint
    - Connect your GitHub repo
    - Render auto-detects `render.yaml`
 
-3. **Configure Environment Variables**
-   - Worker service: Set `IMGUR_CLIENT_ID`
-   - API service: Set `PERCHANCE_WORKER_URL`
+2. **Configure Environment Variable**
+   - API service: Set `PERCHANCE_WORKER_URL` to your worker URL
+   - Worker URL format: `https://perchance-worker.onrender.com`
 
-4. **Done!** Your API is live 🎉
+3. **Done!** Your API is live 🎉
 
 ## Architecture
 
@@ -90,14 +84,15 @@ curl "https://your-api.onrender.com/generate?prompt=robot&seed=12345"
 └─────────────┘      └──────────────┘      └──────────┘
                             │                     │
                             │                     ▼
-                            │              ┌──────────┐
-                            │              │  Imgur   │
-                            │              │  Upload  │
-                            │              └──────────┘
+                            │              ┌──────────────┐
+                            │              │   Generate   │
+                            │              │  & Encode    │
+                            │              │   Base64     │
+                            │              └──────────────┘
                             ▼                     │
                      ┌──────────────┐            │
                      │ JSON Response│◀───────────┘
-                     │ with URL     │
+                     │ with Data URL│
                      └──────────────┘
 ```
 
@@ -105,7 +100,7 @@ curl "https://your-api.onrender.com/generate?prompt=robot&seed=12345"
 
 - **API Service**: Lightweight Flask API that handles requests and returns JSON
 - **Worker Service**: Heavy-duty Docker container running Perchance image generation
-- **Imgur Storage**: Free cloud storage for generated images
+- **Base64 Encoding**: Images encoded as data URLs (no external storage needed)
 
 ## Project Structure
 
@@ -138,7 +133,7 @@ Generate an image from a text prompt
 
 **100% Free Setup:**
 - ✅ Render Free Tier: 750 hours/month (enough for 2 services)
-- ✅ Imgur Free Tier: 12,500 requests/day, unlimited storage
+- ✅ No external API keys or services required
 - ✅ No credit card required
 
 **Note**: On Render free tier, services sleep after 15 minutes. First request after sleeping takes 30-60 seconds.
@@ -150,22 +145,22 @@ Generate an image from a text prompt
 - 512MB RAM per service
 - Cold start: 30-60 seconds
 
-### Imgur Free Tier
-- 12,500 API requests per day
-- Images are publicly accessible
-- No image deletion after upload
+### Base64 Data URLs
+- Images embedded in JSON response (larger response size)
+- Best for small to medium images
+- Not cached like traditional image URLs
 
 ## Upgrading
 
 For better performance, consider:
 - **Render Starter** ($7/month): Always on, no cold starts
-- **Alternative Storage**: Cloudinary, AWS S3, or Backblaze B2
+- **External Storage** (optional): Add Cloudinary, AWS S3, or Imgur for smaller responses
 
 ## Tech Stack
 
 - **Backend**: Flask (Python)
 - **Image Generation**: Perchance AI
-- **Image Storage**: Imgur
+- **Image Format**: Base64-encoded data URLs
 - **Deployment**: Render (Docker + Python)
 - **Production Server**: Gunicorn
 
@@ -174,7 +169,6 @@ For better performance, consider:
 - 📖 [Full Deployment Guide](DEPLOYMENT_GUIDE.md)
 - 🔧 [Render Documentation](https://render.com/docs)
 - 🎨 [Perchance AI](https://perchance.org/text-to-image-plugin)
-- 📷 [Imgur API](https://apidocs.imgur.com/)
 
 ## License
 

@@ -2,9 +2,9 @@
 
 ## Overview
 
-This is a Flask-based image generation service that uses Perchance text-to-image and returns image URLs hosted on Imgur. The service is designed to run on Render's free tier with a two-service architecture.
+This is a Flask-based image generation service that uses Perchance text-to-image and returns images as base64-encoded data URLs. The service is designed to run on Render's free tier with a two-service architecture and requires no external API keys.
 
-**Current Status**: Ready for Render deployment. Both API and worker services are configured to run on Render's free tier with image URLs stored on Imgur.
+**Current Status**: Ready for Render deployment. Both API and worker services are configured to run on Render's free tier with images returned as base64 data URLs.
 
 ## User Preferences
 
@@ -14,47 +14,49 @@ Preferred communication style: Simple, everyday language.
 
 ### API Service (Render)
 - **Flask REST API** - Lightweight service that handles incoming requests
-- **JSON Responses** - Returns image URLs instead of binary data
+- **JSON Responses** - Returns base64-encoded data URLs instead of binary data
 - **Stateless Design** - No data persistence; all requests are forwarded to worker
 - **Environment-based Configuration** - Worker URL configured via `PERCHANCE_WORKER_URL` environment variable
 - **Health Check Endpoint** - Monitors service status and worker connectivity
 
-**Rationale**: Running a minimal API on Render's free tier keeps the service responsive. Returning URLs instead of binary data is essential for Render's ephemeral storage.
+**Rationale**: Running a minimal API on Render's free tier keeps the service responsive. Returning data URLs instead of binary data is essential for Render's ephemeral storage.
 
 ### Worker Service (Render)
 - **Dockerized Flask Worker** - Isolated service running Perchance image generation library
-- **Imgur Integration** - Uploads generated images to Imgur cloud storage
+- **Base64 Encoding** - Converts generated images to base64 data URLs
 - **Async Processing** - Uses asyncio to handle image generation efficiently
 - **Independent Deployment** - Separate Docker container allows for scaling and updates without affecting main API
 
-**Rationale**: Perchance library requires specific dependencies (Playwright, Pillow) and compute resources that are better suited for a containerized environment. Imgur provides free, permanent image hosting which solves Render's ephemeral storage limitation.
+**Rationale**: Perchance library requires specific dependencies (Playwright, Pillow) and compute resources that are better suited for a containerized environment. Base64 encoding eliminates the need for external storage services and API keys.
 
 ### Communication Pattern
 - **HTTP-based Service-to-Service** - Main API forwards requests to worker via HTTP POST
 - **Request Translation** - API converts GET requests (user-facing) to POST requests (worker-facing)
-- **JSON Response Flow** - Worker returns image URL in JSON; API forwards to user
+- **JSON Response Flow** - Worker returns base64 image in JSON; API converts to data URL and forwards to user
 - **Parameter Forwarding** - Supports prompt, seed, guidance_scale, shape, and negative_prompt parameters
 
 **Alternatives Considered**: 
 - Direct binary response - Rejected due to Render's ephemeral storage
 - Queue-based async processing - Rejected for simplicity; synchronous HTTP sufficient for current use case
 - Local file storage - Rejected because Render free tier has no persistent storage
+- External cloud storage - Rejected to avoid API key management and additional dependencies
 
-**Pros**: Clear separation of concerns, easier debugging, independent scaling, permanent image URLs
-**Cons**: Additional network latency, requires managing two services and Imgur API key
+**Pros**: Clear separation of concerns, easier debugging, independent scaling, no external dependencies
+**Cons**: Additional network latency, larger JSON responses due to base64 encoding
 
-### Image Storage
-- **Imgur Cloud Storage** - Free tier with 12,500 requests/day and unlimited storage
-- **Base64 Upload** - Images uploaded as base64-encoded data via Imgur API
-- **Permanent URLs** - Images never expire and are publicly accessible
-- **No Authentication Required** - Only Client ID needed (no Client Secret)
+### Image Format
+- **Base64 Data URLs** - Images encoded as base64 and returned in JSON
+- **PNG Format** - Generated images are PNG format
+- **Direct Embedding** - Data URLs can be used directly in HTML img tags or CSS
+- **No External Storage** - Eliminates need for cloud storage services
 
 **Alternatives Considered**:
+- Imgur - Free but requires API key management
 - Cloudinary - More features but adds complexity
 - AWS S3 - Requires payment info after free tier expires
 - Local storage - Not possible on Render free tier (ephemeral)
 
-**Rationale**: Imgur provides the simplest integration with generous free tier and permanent storage, perfect for a free deployment.
+**Rationale**: Base64 data URLs provide the simplest integration with no API keys or external services required, perfect for a free deployment.
 
 ### Image Generation
 - **Perchance Library** - Uses `perchance` Python package for AI image generation
@@ -64,7 +66,7 @@ Preferred communication style: Simple, everyday language.
 - **Negative Prompts** - Allows specifying unwanted elements
 
 ### Error Handling
-- **Configuration Validation** - Checks worker URL and Imgur Client ID presence before processing
+- **Configuration Validation** - Checks worker URL presence before processing
 - **Parameter Validation** - Validates required fields and provides clear error messages
 - **Network Error Handling** - Gracefully handles timeouts and connection errors to worker
 - **Service Status Monitoring** - Health endpoints on both API and worker for monitoring
@@ -72,13 +74,13 @@ Preferred communication style: Simple, everyday language.
 
 ### File Organization
 - **API Service** - Main application files
-  - `app.py` - Main Flask API application (returns JSON with image URLs)
+  - `app.py` - Main Flask API application (returns JSON with base64 data URLs)
   - `requirements.txt` - Python dependencies for API (Flask, requests, gunicorn)
   - `render.yaml` - Render deployment configuration for both services
   - `DEPLOYMENT_GUIDE.md` - Complete deployment instructions for Render
   
 - **Render Worker** - Worker service files in `render_worker/` folder
-  - `worker.py` - Flask worker that runs Perchance and uploads to Imgur
+  - `worker.py` - Flask worker that runs Perchance and returns base64 images
   - `requirements.txt` - Python dependencies for Docker container
   - `Dockerfile` - Container configuration with Firefox/Playwright
   - `README.md` - Worker-specific documentation
@@ -91,11 +93,7 @@ Preferred communication style: Simple, everyday language.
   - Python runtime for API
   - Free tier: 750 hours/month per service
   - Services sleep after 15 minutes of inactivity
-
-- **Imgur** - Image hosting and storage
-  - Free tier: 12,500 requests/day, unlimited storage
-  - No expiration on uploaded images
-  - Public image URLs
+  - No external API keys or storage services required
 
 ### Python Libraries
 
@@ -123,9 +121,10 @@ Preferred communication style: Simple, everyday language.
   
 - **Playwright (1.48.0)** - Browser automation
   - Required by Perchance for certain generation features
-  
-- **Requests (2.31.0)** - HTTP client library
-  - Used for uploading images to Imgur API
+
+- **Base64 (built-in)** - Image encoding
+  - Converts binary image data to base64 strings
+  - No additional dependencies needed
 
 ### Environment Configuration
 
@@ -135,10 +134,8 @@ Preferred communication style: Simple, everyday language.
   - Used by API to locate and communicate with worker service
 
 **Worker Service:**
-- **IMGUR_CLIENT_ID** - Required environment variable for Imgur API
-  - Obtained from https://api.imgur.com/oauth2/addclient
-  - Used to authenticate Imgur uploads
-  - Free tier allows 12,500 requests/day
+- No environment variables required
+  - Worker generates and encodes images without external dependencies
 
 ### Deployment Architecture
 - **Render (Both Services)** - Complete hosting on Render free tier
@@ -154,7 +151,7 @@ Preferred communication style: Simple, everyday language.
 ```json
 {
   "success": true,
-  "image_url": "https://i.imgur.com/xxxxx.png",
+  "image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
   "prompt": "sunset over mountains",
   "seed": 123456,
   "shape": "landscape",
@@ -174,22 +171,20 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes (October 17, 2025)
 
-- **Architecture Migration**: Moved from Replit+Render hybrid to full Render deployment
-- **Response Format**: Changed from binary PNG to JSON with image URLs
-- **Image Storage**: Integrated Imgur for permanent cloud storage
-- **Worker Enhancement**: Added Imgur upload functionality to worker service
-- **API Update**: Modified to return JSON responses instead of binary images
-- **Deployment Simplification**: Created render.yaml for one-click deployment of both services
-- **Documentation**: Completely rewrote DEPLOYMENT_GUIDE.md for Render-only setup
-- **Dependencies**: Added gunicorn for production API serving
+- **Image Format Change**: Switched from Imgur URLs to base64-encoded data URLs
+- **Removed External Dependencies**: Eliminated Imgur API integration and requirements
+- **Simplified Setup**: No API keys or external services needed
+- **Worker Update**: Modified to return base64 images instead of uploading to cloud storage
+- **API Enhancement**: Updated to convert base64 to data URLs for direct browser usage
+- **Documentation Update**: Removed all Imgur-related setup instructions
+- **Dependencies Cleanup**: Removed requests library from worker requirements
 
 ## Deployment Instructions
 
 See `DEPLOYMENT_GUIDE.md` for complete step-by-step instructions to deploy on Render's free tier.
 
 **Quick Steps:**
-1. Get Imgur Client ID from https://api.imgur.com/oauth2/addclient
-2. Push code to GitHub
-3. Deploy to Render using render.yaml blueprint
-4. Set environment variables (IMGUR_CLIENT_ID for worker, PERCHANCE_WORKER_URL for API)
-5. Test the API!
+1. Push code to GitHub
+2. Deploy to Render using render.yaml blueprint
+3. Set environment variable (PERCHANCE_WORKER_URL for API)
+4. Test the API!

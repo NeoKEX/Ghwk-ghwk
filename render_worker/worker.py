@@ -5,11 +5,8 @@ from io import BytesIO
 import traceback
 import os
 import base64
-import requests
 
 app = Flask(__name__)
-
-IMGUR_CLIENT_ID = os.environ.get('IMGUR_CLIENT_ID', '')
 
 def run_async(coro):
     """Helper function to run async code in sync context"""
@@ -20,11 +17,8 @@ def run_async(coro):
     finally:
         loop.close()
 
-def upload_to_imgur(image_binary):
-    """Upload image to Imgur and return the URL"""
-    if not IMGUR_CLIENT_ID:
-        raise ValueError("IMGUR_CLIENT_ID not configured. Please set it in environment variables.")
-    
+def image_to_base64(image_binary):
+    """Convert image binary to base64 string"""
     if hasattr(image_binary, 'read'):
         if hasattr(image_binary, 'seek'):
             image_binary.seek(0)
@@ -32,24 +26,7 @@ def upload_to_imgur(image_binary):
     else:
         image_data = image_binary
     
-    b64_image = base64.b64encode(image_data).decode('utf-8')
-    
-    headers = {
-        'Authorization': f'Client-ID {IMGUR_CLIENT_ID}'
-    }
-    
-    data = {
-        'image': b64_image,
-        'type': 'base64'
-    }
-    
-    response = requests.post('https://api.imgur.com/3/image', headers=headers, data=data)
-    
-    if response.status_code == 200:
-        json_data = response.json()
-        return json_data['data']['link']
-    else:
-        raise Exception(f"Imgur upload failed: {response.status_code} - {response.text}")
+    return base64.b64encode(image_data).decode('utf-8')
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -57,14 +34,13 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'service': 'Perchance Worker',
-        'version': '2.0.0',
-        'imgur_configured': bool(IMGUR_CLIENT_ID)
+        'version': '3.0.0'
     }), 200
 
 @app.route('/generate', methods=['POST'])
 def generate_image():
     """
-    Generate an image using Perchance and upload to Imgur
+    Generate an image using Perchance and return as base64
     
     JSON Body:
     {
@@ -77,7 +53,7 @@ def generate_image():
     
     Returns:
     {
-        "image_url": "https://i.imgur.com/xxxxx.png",
+        "image_base64": "base64_encoded_image_data",
         "prompt": "...",
         "seed": 123,
         "shape": "square",
@@ -131,12 +107,12 @@ def generate_image():
         # Run async generation
         image_binary = run_async(generate())
         
-        # Upload to Imgur
-        image_url = upload_to_imgur(image_binary)
+        # Convert to base64
+        image_base64 = image_to_base64(image_binary)
         
-        # Return JSON response with image URL
+        # Return JSON response with base64 image
         response_data = {
-            'image_url': image_url,
+            'image_base64': image_base64,
             'prompt': prompt,
             'seed': seed,
             'shape': shape,
